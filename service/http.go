@@ -15,7 +15,7 @@ import (
 func (s *Service) ListenHttp(c ctx.C, addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc(`/api/add_view`, s.handleAddView)
-	mux.HandleFunc(`/api/get_events`, s.handleAddView)
+	mux.HandleFunc(`/api/get_events`, s.handleGetEvents)
 
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -67,5 +67,34 @@ func (s *Service) handleAddView(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleGetEvents(w http.ResponseWriter, r *http.Request) {
+func (s *Service) handleGetEvents(w http.ResponseWriter, r *http.Request) {
+	c := ctx.WithTag(r.Context(), `req`, r.URL.Path)
+	auth := r.Header.Get(`x-authorization`)
+	ss, err := s.NewSession(c, auth)
+	if err != nil {
+		ctx.Log(c).Warnf("unauthorized: %v", err)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	// search by person?
+	p := r.FormValue("person")
+	if p != "" {
+		list, err := ss.DB.EventsByPerson(c, p)
+		if err != nil {
+			ctx.Log(c).Warnf("can't fetch events: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		j, err := json.Marshal(list) // todo sould be wrapped in a object with pagination
+		if err != nil {
+			panic(err)
+		}
+		_, err = w.Write(j)
+		if err != nil {
+			ctx.Log(c).Warnf("can't write to client: %v", err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
 }
